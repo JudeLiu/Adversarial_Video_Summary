@@ -11,12 +11,43 @@ from feature_extraction import ResNetFeature
 frames_root_dir = '/slwork/jun/vsum_project/Datasets/VSUMM'
 data_type = ['database', 'new_database']
 feature_output_dir = '/slwork/jun/vsum_project/Adversarial_Video_Summary/resnet101_features'
-resnet_input_shape = [224, 224,]
+resnet_input_shape = (224, 224)
 batch_size = 1
 
+class Rescale(object):
+    """Rescale a image to a given size.
+
+    Args:
+        output_size (tuple or tuple): Desired output size. If tuple, output is
+            matched to output_size. If int, smaller of image edges is matched
+            to output_size keeping aspect ratio the same.
+    """
+
+    def __init__(self, *output_size):
+        self.output_size = output_size
+
+    def __call__(self, image):
+        """
+        Args:
+            image (PIL.Image) : PIL.Image object to rescale
+        """
+        new_h, new_w = self.output_size
+        new_h, new_w = int(new_h), int(new_w)
+        img = resize(image, (new_w, new_h))
+        return img
+
+
+class ToTensor(object):
+    def __call__(self, x):
+        if isinstance(x, np.ndarray):
+            return torch.from_numpy(x.astype(np.float32)/255).permute(2, 0, 1)
+
+            
 def main():
-    net = ResNetFeature(feature='resnet101')
+    net = ResNetFeature(feature='resnet101').cuda(0)
     resnet_transform = transforms.Compose([
+        Rescale(*resnet_input_shape),
+        ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
 
@@ -53,33 +84,21 @@ def main():
             
             reader = imageio.get_reader(video_name)
             print('reader created')
-            feature = []
             
-            frame_no = reader.get_length()
-            print('{} has {} frames'.format(video, frame_no))
-            index_split = np.array_split(np.arange(frame_no), frame_no//batch_size)
+            frame_len = reader.get_length()
+            print('{} has {} frames'.format(video, frame_len))
 
-            for i, s in enumerate(index_split):
-                frames = [reader.get_next_data() for i in s]
-                frames = np.array(frames)
-                
-                for j, f in enumerate(frames):
-                    resize_frames[j] = resize(f, resnet_input_shape)
-                convert_np_2_tensor = lambda f: torch.from_numpy(f.astype(np.float32)).permute(0, 3, 1, 2).cuda(0)
+            feature = []
 
-                res5c, pool5 = net(resnet_transform(convert_np_2_tensor(resize_frames)))
-
-                del resize_frames
-
-                print(pool5.size())
-                feature.append(pool5.cpu())
-
-                del res5c, pool5
-                print('batch %i'%i)
-            features = torch.cat(feature)
+            for indices in np.split(np.arange(frame_len), frame_len//batch_size):
+                frames = [resnet_transform(reader.get_next_data()) for i in indices]
+                frames = torch.stack(frames)
+                feat = net(frames.cuda(0)).cpu()
+                feature.append(feat)
+            feature = torch.cat(feature)
 
             with h5py.File(h5file_name) as f:
-                d = f.create_dataset('feat', data=features.numpy())
+                d = f.create_dataset('feat', data=feature.numpy())
                 d.attrs['vname'] = video[:-4]
             
 
