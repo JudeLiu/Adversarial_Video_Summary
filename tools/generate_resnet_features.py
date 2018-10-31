@@ -7,12 +7,17 @@ import imageio
 import h5py 
 from skimage.transform import resize
 from feature_extraction import ResNetFeature
+from imageio import imread
+from time import time
 
 frames_root_dir = '/slwork/jun/vsum_project/Datasets/VSUMM'
 data_type = ['database', 'new_database']
 feature_output_dir = '/slwork/jun/vsum_project/Adversarial_Video_Summary/resnet101_features'
 resnet_input_shape = (224, 224)
-batch_size = 1
+batch_size = 128
+use_gpu = 1
+devices = 'cuda:0' if use_gpu else 'cpu'
+
 
 class Rescale(object):
     """Rescale a image to a given size.
@@ -42,17 +47,18 @@ class ToTensor(object):
         if isinstance(x, np.ndarray):
             return torch.from_numpy(x.astype(np.float32)/255).permute(2, 0, 1)
 
-            
+
 def main():
-    net = ResNetFeature(feature='resnet101').cuda(0)
+    net = ResNetFeature(feature='resnet101').to(device=devices)
     resnet_transform = transforms.Compose([
         Rescale(*resnet_input_shape),
         ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
 
-    for ty in data_type[0:1]:
-        # method 1: use imageio.mimread, cost too many memories
+    for ty in data_type:
+        # method 1: use imageio.mimread, cost too many memories, failed
+        #
         # features = {}
         # all_video_dir = os.path.join(frames_root_dir, ty)
         # for video in sorted(os.listdir(all_video_dir), key=lambda s:int(s[1:-4])):
@@ -71,52 +77,101 @@ def main():
         # del resize_frames
 
 
-        # method 2: use imageio.get_reader
-        all_video_dir = os.path.join(frames_root_dir, ty)
-        for video in sorted(os.listdir(all_video_dir), key=lambda s:int(s[1:-4])):
-            video_name = os.path.join(all_video_dir, video)
-            h5file_name = '{}.hdf5'.format(os.path.join(feature_output_dir, video[:-4]))
+        # method 2: use imageio.get_reader, something wrong with the video decoder, cann't fix it
+        #
+        # all_video_dir = os.path.join(frames_root_dir, ty)
+        # for video in sorted(os.listdir(all_video_dir), key=lambda s:int(s[1:-4])):
+        #     video_name = os.path.join(all_video_dir, video)
+        #     h5file_name = '{}.hdf5'.format(os.path.join(feature_output_dir, video[:-4]))
 
-            print('processing {}'.format(video_name))
-            if os.path.exists(h5file_name):
-                print('existed, skip')
-                continue
+        #     print('processing {}'.format(video_name))
+        #     if os.path.exists(h5file_name):
+        #         print('existed, skip')
+        #         continue
             
-            reader = imageio.get_reader(video_name)
-            print('reader created')
+        #     reader = imageio.get_reader(video_name)
+        #     print('reader created')
             
-            frame_len = reader.get_length()
-            print('{} has {} frames'.format(video, frame_len))
+        #     frame_len = reader.get_length()
+        #     print('{} has {} frames'.format(video, frame_len))
 
-            feature = []
+        #     feature = []
+        #     from time import time
+        #     batch_split = np.array_split(np.arange(frame_len), frame_len//batch_size)
+        #     for no, indices in enumerate(batch_split):
+        #         print('{}/{}'.format(no+1, len(batch_split)))
+        #         frames = [resnet_transform(reader.get_next_data()) for i in indices]
+        #         frames = torch.stack(frames).to(device=devices)
+        #         with torch.no_grad():
+        #             tic = time()
+        #             _, feat = net(frames)
+        #             toc=time()
+        #             print('cost {:.4f}'.format(toc-tic))
+        #             feat=feat.to(device=devices)
+        #             feature.append(feat)
+        #             torch.cuda.empty_cache()
 
-            for indices in np.split(np.arange(frame_len), frame_len//batch_size):
-                frames = [resnet_transform(reader.get_next_data()) for i in indices]
+        #             if use_gpu:
+        #                 print(torch.cuda.memory_allocated()/2**20, 'MB')
+        #                 print(torch.cuda.memory_cached()/2**20, 'MB')
+        #                 print()                    
+        #     feature = torch.cat(feature)
+
+        #     with h5py.File(h5file_name) as f:
+        #         d = f.create_dataset('feat', data=feature.numpy())
+        #         d.attrs['vname'] = video[:-4]
+            
+        #     reader.close()
+        #     print(video_name, 'finished')
+
+
+        # method 3: need opencv preprocess
+        frames_root_dir = '/slwork/jun/vsum_project/Datasets/VSUMM_frames'
+        for ty in data_type:
+            raw_frames_dir = os.path.join(frames_root_dir, ty)
+            
+            for work_dir in sorted(os.listdir(raw_frames_dir), key=lambda s:int(s[1:])):
+                h5file_name = '{}.hdf5'.format(os.path.join(feature_output_dir, work_dir))
+                print('processing ', h5file_name)
+                if os.path.exists(h5file_name):
+                    print('existed, skip')
+                    continue
+                
+                frames = []
+                wd = os.path.join(frames_root_dir, ty, work_dir)
+                frames_name = sorted(os.listdir(wd), key=lambda s:int(s[:-4]))
+                for name in frames_name:
+                    img = imread(os.path.join(wd, name))
+                    frames.append(resnet_transform(img))
                 frames = torch.stack(frames)
-                feat = net(frames.cuda(0)).cpu()
-                feature.append(feat)
-            feature = torch.cat(feature)
+                print(work_dir, frames.shape)
 
-            with h5py.File(h5file_name) as f:
-                d = f.create_dataset('feat', data=feature.numpy())
-                d.attrs['vname'] = video[:-4]
-            
+                feature = []
+                frame_len = frames.shape[0]
+                batch_split = np.array_split(np.arange(frame_len), frame_len//batch_size)
+                for no, indices in enumerate(batch_split):
+                    print('{}/{}'.format(no+1, len(batch_split)))
+                    with torch.no_grad():
+                        tic = time()
+                        _, feat = net(frames[indices].to(device=devices))
+                        toc=time()
+                        print('cost {:.4f}'.format(toc-tic))
+                        feat=feat.to(device='cpu')
+                        feature.append(feat)
+
+                        if use_gpu:
+                            print(torch.cuda.memory_allocated()/2**20, 'MB')
+                            print(torch.cuda.memory_cached()/2**20, 'MB')
+                            torch.cuda.empty_cache()
+                            print()                    
+                feature = torch.cat(feature)
+
+                with h5py.File(h5file_name) as f:
+                    d = f.create_dataset('feat', data=feature.numpy())
+                    d.attrs['vname'] = work_dir
 
 
-        # method 3: need opencv
-        # for ty in data_type[0:1]:
-        #     all_frames_dir = os.path.join(frames_root_dir, ty)
-            
-        #     all_frames = {}
-        #     for work_dir in os.listdir(all_frames_dir)[0:1]:
-        #         frames = []
-        #         wd = os.path.join(frames_root_dir, ty, work_dir)
-        #         frames_name = sorted(os.listdir(wd), key=lambda s:int(s[:-4]))
-        #         for name in frames_name:
-        #             img = imread(os.path.join(wd, name))
-        #             frames.append(img)
-        #         frames = np.array(frames)
-        #         print(frames.shape)
 
 if __name__ == '__main__':
     main()
+
