@@ -8,7 +8,7 @@ from pathlib import Path
 from feature_extraction import resnet_transform
 import h5py
 import numpy as np
-#interesting
+
 
 class VideoData(Dataset):
     def __init__(self, root, preprocessed=True, transform=resnet_transform, with_name=False):
@@ -26,9 +26,9 @@ class VideoData(Dataset):
             image_path = self.video_list[index]
             with h5py.File(image_path, 'r') as f:
                 if self.with_name:
-                    return torch.Tensor(np.array(f['pool5'])), image_path.name[:-5]
+                    return torch.Tensor(np.array(f['feat'])), image_path.name[:-4]
                 else:
-                    return torch.Tensor(np.array(f['pool5']))
+                    return torch.Tensor(np.array(f['feat']))
 
         else:
             images = []
