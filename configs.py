@@ -5,10 +5,11 @@ from pathlib import Path
 import pprint
 
 project_dir = Path(__file__).resolve().parent
-dataset_dir = Path('/data1/jysung710/tmp_sum/360video/').resolve()
-video_list = ['360airballoon', '360parade', '360rowing', '360scuba', '360wedding']
-save_dir = Path('/data1/jmcho/SUM_GAN/')
-score_dir = Path('/data1/common_datasets/tmp_sum/360video/results/SUM-GAN/')
+dataset_dir = Path('./resnet101_features').resolve()
+# video_list = ['360airballoon', '360parade', '360rowing', '360scuba', '360wedding']
+video_list = list(dataset_dir.iterdir())[:1]
+save_dir = Path('./SUMGAN_model')
+score_dir = Path('./Eval_result')
 
 
 def str2bool(v):
@@ -29,7 +30,7 @@ class Config(object):
 
         self.set_dataset_dir(self.video_type)
 
-    def set_dataset_dir(self, video_type='360airballon'):
+    def set_dataset_dir(self, video_type):
         if self.preprocessed:
             self.video_root_dir = dataset_dir.joinpath('resnet101_feature', video_type, self.mode)
         else:
@@ -59,7 +60,7 @@ def get_config(parse=True, **optional_kwargs):
     parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--verbose', type=str2bool, default='true')
     parser.add_argument('--preprocessed', type=str2bool, default='True')
-    parser.add_argument('--video_type', type=str, default='360airballoon')
+    parser.add_argument('--video_type', type=str, default='v21')
 
     # Model
     parser.add_argument('--input_size', type=int, default=2048)

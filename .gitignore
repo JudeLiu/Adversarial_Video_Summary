@@ -1,3 +1,4 @@
+__pycache__
 resnet101_features/*
-tools/__pycache__
+*/__pycache__
 tools/log
