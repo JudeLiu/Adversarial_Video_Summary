@@ -7,7 +7,8 @@ import pprint
 project_dir = Path(__file__).resolve().parent
 dataset_dir = Path('./resnet101_features').resolve()
 # video_list = ['360airballoon', '360parade', '360rowing', '360scuba', '360wedding']
-video_list = list(dataset_dir.iterdir())[:1]
+# video_list = list(dataset_dir.iterdir())[:1]
+video_list = ['OVP']
 save_dir = Path('./SUMGAN_model')
 score_dir = Path('./Eval_result')
 
@@ -32,7 +33,8 @@ class Config(object):
 
     def set_dataset_dir(self, video_type):
         if self.preprocessed:
-            self.video_root_dir = dataset_dir.joinpath('resnet101_feature', video_type, self.mode)
+            # self.video_root_dir = dataset_dir.joinpath('resnet101_feature', video_type, self.mode)
+            self.video_root_dir = dataset_dir.joinpath(video_type, self.mode)
         else:
             self.video_root_dir = dataset_dir.joinpath('video_subshot', video_type, 'test')
         self.save_dir = save_dir.joinpath(video_type)
@@ -60,7 +62,7 @@ def get_config(parse=True, **optional_kwargs):
     parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--verbose', type=str2bool, default='true')
     parser.add_argument('--preprocessed', type=str2bool, default='True')
-    parser.add_argument('--video_type', type=str, default='v21')
+    parser.add_argument('--video_type', type=str, default='OVP')
 
     # Model
     parser.add_argument('--input_size', type=int, default=2048)
